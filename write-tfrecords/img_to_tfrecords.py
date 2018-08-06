@@ -10,6 +10,21 @@ import re
 from pprint import pprint
 import argparse
 
+import matplotlib.pyplot as plt
+
+global fig
+fig = plt.figure()
+
+
+def imshow(img, block=True, rgb=False):
+    global fig
+    plt.figure(fig.number)
+    if not rgb:
+        plt.imshow(img, interpolation='nearest')
+    else:
+        plt.imshow(img)
+    plt.show(block=block)
+
 
 def read_filelist(img_path, seg_path):
     print('Reading from: {}, \n\t{}'.format(img_path, seg_path))
@@ -42,17 +57,20 @@ def _bytes_feature(value):
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 
+def replace(v, org_val, new_val):
+    comparison = tf.equal(v, org_val)
+    return tf.where(comparison, tf.ones_like(v) * new_val, v)
+
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--imgpath',
-        help="path to images",
-        default="data/VOC_OBJECT/dataset_multlabel/images/")
+        '--imgpath', help="path to images", default="data/images/")
     parser.add_argument(
         '--segpath',
         help="path to segmentations",
-        default="data/VOC_OBJECT/dataset_multlabel/segmentations/")
+        default="data/segmentations/")
     parser.add_argument(
         '--outpath', help="path to write tfrecord", default="tfrecords/")
     parser.add_argument(
@@ -72,10 +90,18 @@ if __name__ == '__main__':
 
     if args.crop == "y":
         print('Resizing images to 224x224')
-        myImg = tf.image.resize_image_with_crop_or_pad(myImg, 224, 224)
-        mySeg = tf.image.resize_image_with_crop_or_pad(mySeg, 224, 224)
-
-    #init=tf.initialize_all_variables()
+        myImg = tf.image.resize_images(
+            myImg, [96, 96], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
+        all_val = [
+            0, 14, 19, 33, 37, 38, 52, 57, 72, 75, 89, 94, 108, 112, 113, 128,
+            132, 147, 150, 220
+        ]
+        start = 0
+        for i in all_val:
+            mySeg=replace(mySeg, i, start)
+            start += 1
+        mySeg = tf.image.resize_images(
+        mySeg, [96, 96], method=tf.image.ResizeMethod.NEAREST_NEIGHBOR)
     init_global = tf.global_variables_initializer()  # v0.12
 
     with tf.Session() as sess:
@@ -87,10 +113,16 @@ if __name__ == '__main__':
         coord = tf.train.Coordinator()
         threads = tf.train.start_queue_runners(coord=coord)
         writer = tf.python_io.TFRecordWriter(filename)
-
+        myImg.eval()
+        uniq = []
         for index in tqdm(range(imgLen)):  #(11648)
             image = myImg.eval()
+            # imshow(image.reshape([96, 96, 3]))
             mask = mySeg.eval()
+            # uniq += list(np.unique(mask))
+            # uniq = list(np.unique(uniq))
+            # print(uniq)
+            # imshow(mask.reshape([96, 96]))
             imageRaw = image.tostring()
             maskRaw = mask.tostring()
             example = tf.train.Example(
